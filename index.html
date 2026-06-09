@@ -1776,7 +1776,15 @@ function renderBillList(){
     const isPaid=b.status==='paid'||b.status==='autopay'||b.status==='pending';
     const today=new Date().toISOString().slice(0,10);
     const isOverdue=b.due&&b.due<today&&!isPaid;
-    const dueLabel=b.due?`<span style="font-size:10px;${isOverdue?'color:var(--red);font-weight:700':b.due<=new Date(new Date().setDate(new Date().getDate()+3)).toISOString().slice(0,10)&&!isPaid?'color:var(--yellow)':'color:var(--muted)'}">${isOverdue?'⚠ ':''}Due ${new Date(b.due+'T00:00:00').toLocaleDateString('en-US',{month:'short',day:'numeric'})}</span>`:'';
+    const dueLabel=(()=>{
+      if(!b.due)return '';
+      const d=new Date(b.due+'T00:00:00');
+      const label=d.toLocaleDateString('en-US',{month:'short',day:'numeric'});
+      if(isOverdue)return '<span style="font-size:10px;color:var(--red);font-weight:700">⚠ Due '+label+'</span>';
+      const soon=new Date();soon.setDate(soon.getDate()+3);
+      if(b.due<=soon.toISOString().slice(0,10)&&!isPaid)return '<span style="font-size:10px;color:var(--yellow)">Due '+label+'</span>';
+      return '<span style="font-size:10px;color:var(--muted)">Due '+label+'</span>';
+    })();
     return`<div class="bill-item${isPaid?' bill-paid':''}${isOverdue?' bill-overdue':''}" onclick="openBillEdit('${b.id}')">
       <div class="bill-icon ${cls}">${iconFor(b.name,b.type)}</div>
       <div class="bill-info">
@@ -1841,12 +1849,6 @@ function renderOverview(){
       outLabel='Assigned'; outVal=totalAssigned>0?fmt(totalAssigned):'—';
       hasBills=payTotal>0||totalCredited>0||totalAssigned>0;
       pct=( payTotal+totalCredited)>0?Math.min(100,Math.round(totalAssigned/(payTotal+totalCredited)*100)):0;
-      barColor=pct===100?'var(--green)':pct>80?'var(--yellow)':a.color;
-    }
-      inLabel='Paycheck'; inVal=payTotal>0?fmt(payTotal):'—';
-      outLabel='Assigned'; outVal=totalAssigned>0?fmt(totalAssigned):'—';
-      hasBills=payTotal>0;
-      pct=payTotal>0?Math.min(100,Math.round(totalAssigned/payTotal*100)):0;
       barColor=pct===100?'var(--green)':pct>80?'var(--yellow)':a.color;
     } else {
       // Other buckets: In = bills assigned (from Bills/Pay), Out = paid, Balance = remaining + adjustments
