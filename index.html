@@ -277,6 +277,7 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;backgrou
 .bill-item{cursor:pointer}
 .bill-item.bill-paid{opacity:.7}
 .bill-item.bill-paid .bill-name{text-decoration:line-through;text-decoration-color:rgba(255,255,255,.3)}
+.bill-item.bill-overdue{border-color:rgba(248,113,113,.4);background:rgba(248,113,113,.04)}
 
 /* ACCOUNT BUCKET GRID CARD */
 .bucket-card{background:var(--card);border:1.5px solid var(--border);border-radius:var(--radius);padding:14px;cursor:pointer;transition:all .2s;position:relative;overflow:hidden}
@@ -354,6 +355,16 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;backgrou
 .ledger-park-actions{display:flex;gap:3px;flex-shrink:0;margin-left:4px}
 .park-action-btn{background:none;border:none;cursor:pointer;font-size:12px;opacity:.4;padding:3px 4px;transition:all .2s;border-radius:5px;color:var(--muted)}
 .park-action-btn:hover{opacity:1;background:var(--border)}
+
+/* CARRY OVER ROWS */
+.co-row{display:flex;align-items:center;gap:10px;padding:9px 12px;background:var(--card);border:1px solid var(--border);border-radius:10px;margin-bottom:6px;cursor:pointer;transition:all .2s}
+.co-row.selected{border-color:var(--accent);background:rgba(79,124,255,.08)}
+.co-check{width:18px;height:18px;border-radius:5px;border:2px solid var(--border);display:flex;align-items:center;justify-content:center;flex-shrink:0;font-size:11px;transition:all .2s}
+.co-row.selected .co-check{background:var(--accent);border-color:var(--accent);color:#fff}
+.co-info{flex:1;min-width:0}
+.co-name{font-size:13px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.co-meta{font-size:10px;color:var(--muted);margin-top:1px}
+.co-amt{font-size:13px;font-weight:700;color:var(--red);flex-shrink:0}
 </style>
 </head>
 <body>
@@ -640,6 +651,10 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;backgrou
       <input class="form-input" id="add-amount" type="number" min="0" step="0.01" placeholder="0.00"/>
     </div>
     <div class="form-row">
+      <div class="form-label">Due Date <span style="color:var(--muted);font-weight:400">(optional)</span></div>
+      <input class="form-input" id="add-due" type="date"/>
+    </div>
+    <div class="form-row">
       <div class="form-label">Checking Account / Bucket</div>
       <div class="acct-picker" id="acct-picker">
         <button class="apick-btn active" data-acct="" onclick="pickAcct(this,'')">None</button>
@@ -739,6 +754,10 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;backgrou
       <input class="form-input" id="edit-amount" type="number" min="0" step="0.01" oninput="refreshPaidPanel()"/>
     </div>
     <div class="form-row">
+      <div class="form-label">Due Date <span style="color:var(--muted);font-weight:400">(optional)</span></div>
+      <input class="form-input" id="edit-due" type="date"/>
+    </div>
+    <div class="form-row">
       <div class="form-label">Type</div>
       <div class="type-grid">
         <button class="type-btn active expense" id="edit-type-expense" onclick="setEditType('expense')">💸 Expense</button>
@@ -779,6 +798,27 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;backgrou
       <button class="btn-primary" onclick="saveBillEdit()" style="flex:1">Save Changes</button>
       <button onclick="deleteBillFromEdit()" style="flex:0 0 44px;background:rgba(248,113,113,.15);border:1px solid rgba(248,113,113,.3);color:var(--red);border-radius:12px;cursor:pointer;font-size:18px">🗑</button>
     </div>
+  </div>
+</div>
+
+<!-- CARRY OVER MODAL -->
+<div class="modal-overlay" id="carryover-modal">
+  <div class="modal-box">
+    <div style="text-align:center;margin-bottom:16px">
+      <div style="font-size:32px;margin-bottom:8px">📋</div>
+      <div class="modal-title" id="carryover-title" style="float:none;font-size:17px">Carry Over Bills?</div>
+      <p style="font-size:12px;color:var(--muted);margin-top:6px;line-height:1.6" id="carryover-desc">Copy last month's bills into this month to save time.</p>
+    </div>
+
+    <div id="carryover-list" style="max-height:260px;overflow-y:auto;margin-bottom:14px"></div>
+
+    <div style="display:flex;gap:8px;margin-bottom:8px">
+      <button onclick="selectAllCarryover(true)" style="flex:1;padding:7px;background:transparent;border:1px solid var(--border);color:var(--muted);border-radius:8px;font-size:11px;font-weight:700;cursor:pointer">Select All</button>
+      <button onclick="selectAllCarryover(false)" style="flex:1;padding:7px;background:transparent;border:1px solid var(--border);color:var(--muted);border-radius:8px;font-size:11px;font-weight:700;cursor:pointer">Deselect All</button>
+    </div>
+
+    <button class="btn-primary" onclick="confirmCarryover()" id="carryover-confirm-btn">Copy Selected Bills</button>
+    <button onclick="closeCarryover()" style="width:100%;margin-top:8px;background:none;border:none;color:var(--muted);font-size:13px;cursor:pointer;padding:8px">Start Fresh</button>
   </div>
 </div>
 
@@ -1707,11 +1747,17 @@ function renderBillList(){
   el.innerHTML=bills.map(b=>{
     const cls=b.type||'expense';
     const isPaid=b.status==='paid'||b.status==='autopay'||b.status==='pending';
-    return`<div class="bill-item${isPaid?' bill-paid':''}" onclick="openBillEdit('${b.id}')">
+    const today=new Date().toISOString().slice(0,10);
+    const isOverdue=b.due&&b.due<today&&!isPaid;
+    const dueLabel=b.due?`<span style="font-size:10px;${isOverdue?'color:var(--red);font-weight:700':b.due<=new Date(new Date().setDate(new Date().getDate()+3)).toISOString().slice(0,10)&&!isPaid?'color:var(--yellow)':'color:var(--muted)'}">${isOverdue?'⚠ ':''}Due ${new Date(b.due+'T00:00:00').toLocaleDateString('en-US',{month:'short',day:'numeric'})}</span>`:'';
+    return`<div class="bill-item${isPaid?' bill-paid':''}${isOverdue?' bill-overdue':''}" onclick="openBillEdit('${b.id}')">
       <div class="bill-icon ${cls}">${iconFor(b.name,b.type)}</div>
       <div class="bill-info">
         <div class="bill-name">${esc(b.name)}</div>
-        ${acctTag(b.account)}
+        <div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap;margin-top:2px">
+          ${acctTag(b.account)}
+          ${dueLabel}
+        </div>
         <div class="status-toggle" onclick="event.stopPropagation()">
           <button class="stoggle-btn ${b.status==='unpaid'?'is-unpaid':''}" onclick="quickStatus('${b.id}','unpaid')">Unpaid</button>
           <button class="stoggle-btn ${b.status==='autopay'?'is-auto':''}" onclick="quickStatus('${b.id}','autopay')">⚡ AutoPay</button>
@@ -1852,6 +1898,7 @@ function openBillEdit(id){
 
   document.getElementById('edit-name').value=b.name||'';
   document.getElementById('edit-amount').value=b.amount||'';
+  document.getElementById('edit-due').value=b.due||'';
 
   // type buttons
   ['expense','income','savings','tithe'].forEach(t=>{
@@ -1956,6 +2003,7 @@ function saveBillEdit(){
   const name=document.getElementById('edit-name').value.trim();
   const amount=parseFloat(document.getElementById('edit-amount').value);
   const period=document.getElementById('edit-period').value;
+  const due=document.getElementById('edit-due').value||'';
 
   if(!name){showToast('Enter a name',true);return;}
   if(!amount||isNaN(amount)||amount<=0){showToast('Enter a valid amount',true);return;}
@@ -1967,6 +2015,7 @@ function saveBillEdit(){
     period,
     status:editingStatus,
     account:editingAcct,
+    due,
   };
   state[m].bills=bills;
   save();
@@ -2002,17 +2051,117 @@ function addBill(){
   const amount=parseFloat(document.getElementById('add-amount').value);
   const period=document.getElementById('add-period').value;
   const status=document.getElementById('add-status').value;
+  const due=document.getElementById('add-due').value||'';
   if(!name){showToast('Enter a name',true);return;}
   if(!amount||isNaN(amount)||amount<=0){showToast('Enter a valid amount',true);return;}
   const m=mk();ensureMonth(m);
   if(!state[m].bills)state[m].bills=[];
-  state[m].bills.push({id:Date.now().toString()+Math.random(),name,amount,type:currentType,period,status,account:currentAcct});
+  state[m].bills.push({id:Date.now().toString()+Math.random(),name,amount,type:currentType,period,status,account:currentAcct,due});
   save();
-  document.getElementById('add-name').value='';document.getElementById('add-amount').value='';
+  document.getElementById('add-name').value='';
+  document.getElementById('add-amount').value='';
+  document.getElementById('add-due').value='';
   showToast('Saved ✓');currentPeriod=period;renderAll();switchSection('bills');
 }
 function changeMonth(dir){
-  currentDate=new Date(currentDate.getFullYear(),currentDate.getMonth()+dir,1);renderAll();
+  const prevDate=new Date(currentDate);
+  currentDate=new Date(currentDate.getFullYear(),currentDate.getMonth()+dir,1);
+  const newMk=mk();
+  ensureMonth(newMk);
+  const newBills=state[newMk].bills||[];
+  // Only prompt if going forward to a month with no bills yet
+  if(dir===1 && newBills.length===0){
+    // Check if previous month had bills to carry over
+    const prevMk=`${prevDate.getFullYear()}-${String(prevDate.getMonth()+1).padStart(2,'0')}`;
+    const prevBills=(state[prevMk]?.bills||[]).filter(b=>b.type!=='income');
+    if(prevBills.length>0){
+      openCarryover(prevMk, prevBills);
+      return;
+    }
+  }
+  renderAll();
+}
+
+// ── CARRY OVER ────────────────────────────────────────────────────────────────
+let carryoverFromMk=null;
+let carryoverBills=[];
+let carryoverSelected=new Set();
+
+function openCarryover(fromMk, bills){
+  carryoverFromMk=fromMk;
+  carryoverBills=bills;
+  carryoverSelected=new Set(bills.map(b=>b.id)); // all selected by default
+  const fromDate=new Date(fromMk+'-01');
+  const fromLabel=fromDate.toLocaleString('default',{month:'long',year:'numeric'});
+  const toLabel=currentDate.toLocaleString('default',{month:'long',year:'numeric'});
+  document.getElementById('carryover-title').textContent='Copy Bills to '+toLabel+'?';
+  document.getElementById('carryover-desc').textContent=`${bills.length} bill${bills.length!==1?'s':''} found in ${fromLabel}. Select which ones to copy — amounts reset to unpaid.`;
+  renderCarryoverList();
+  document.getElementById('carryover-modal').classList.add('visible');
+}
+function closeCarryover(){
+  document.getElementById('carryover-modal').classList.remove('visible');
+  carryoverFromMk=null; carryoverBills=[]; carryoverSelected=new Set();
+  renderAll();
+}
+function renderCarryoverList(){
+  const el=document.getElementById('carryover-list');
+  el.innerHTML=carryoverBills.map(b=>{
+    const sel=carryoverSelected.has(b.id);
+    const pLabel=periodLabel(periodById(b.period))||b.period||'';
+    const typeIcon=b.type==='savings'?'🏦':b.type==='tithe'?'✝️':'💸';
+    return`<div class="co-row${sel?' selected':''}" onclick="toggleCarryover('${b.id}')">
+      <div class="co-check">${sel?'✓':''}</div>
+      <div class="co-info">
+        <div class="co-name">${esc(b.name)}</div>
+        <div class="co-meta">${typeIcon} ${b.type} · ${pLabel}${b.account?' · '+(acctInfo(b.account)||{label:b.account}).label:''}</div>
+      </div>
+      <div class="co-amt">-${fmt(b.amount)}</div>
+    </div>`;
+  }).join('');
+  document.getElementById('carryover-confirm-btn').textContent=
+    `Copy ${carryoverSelected.size} Bill${carryoverSelected.size!==1?'s':''}`;
+}
+function toggleCarryover(id){
+  if(carryoverSelected.has(id))carryoverSelected.delete(id);
+  else carryoverSelected.add(id);
+  renderCarryoverList();
+}
+function selectAllCarryover(val){
+  if(val)carryoverBills.forEach(b=>carryoverSelected.add(b.id));
+  else carryoverSelected.clear();
+  renderCarryoverList();
+}
+function confirmCarryover(){
+  if(carryoverSelected.size===0){closeCarryover();return;}
+  const newMk=mk();ensureMonth(newMk);
+  const toCopy=carryoverBills.filter(b=>carryoverSelected.has(b.id));
+  toCopy.forEach(b=>{
+    // Adjust due date to same day in new month
+    let newDue='';
+    if(b.due){
+      const dayOfMonth=parseInt(b.due.slice(8,10));
+      const newYear=currentDate.getFullYear();
+      const newMonth=currentDate.getMonth()+1;
+      const maxDay=new Date(newYear,newMonth,0).getDate();
+      const adjustedDay=Math.min(dayOfMonth,maxDay);
+      newDue=`${newYear}-${String(newMonth).padStart(2,'0')}-${String(adjustedDay).padStart(2,'0')}`;
+    }
+    state[newMk].bills.push({
+      ...b,
+      id:Date.now().toString()+Math.random(),
+      status:'unpaid',
+      due:newDue,
+    });
+  });
+  // Also copy pay amounts
+  const fromPay=state[carryoverFromMk]?.pay||{};
+  getPeriods().forEach(p=>{
+    if(fromPay[p.id])state[newMk].pay[p.id]=fromPay[p.id];
+  });
+  save();
+  closeCarryover();
+  showToast(`✓ Copied ${toCopy.length} bill${toCopy.length!==1?'s':''} + pay amounts`);
 }
 function setPeriod(p){currentPeriod=p;renderAll();}
 
