@@ -1163,16 +1163,19 @@ function computeAcctBalance(monthKey, acctId){
 
   if(acctId==='Bills/Pay'){
     const totalPaycheck=periods.reduce((s,p)=>s+(pay[p.id]||0),0);
-    const allAssigned=bills.filter(b=>b.account&&b.account!==''&&b.type!=='income');
-    const allocated=allAssigned.reduce((s,b)=>s+b.amount,0);
-    const deducted=allAssigned.filter(b=>b.status==='paid'||b.status==='autopay'||b.status==='pending');
+    const allAssigned=bills.filter(b=>b.account&&b.account!=='');
+    const allExpenses=allAssigned.filter(b=>b.type!=='income');
+    const allIncome=allAssigned.filter(b=>b.type==='income');
+    const allocated=allExpenses.reduce((s,b)=>s+b.amount,0);
+    const credited=allIncome.reduce((s,b)=>s+b.amount,0);
+    const deducted=allExpenses.filter(b=>b.status==='paid'||b.status==='autopay'||b.status==='pending');
     const spent=deducted.reduce((s,b)=>s+b.amount,0);
-    const balance=totalPaycheck-allocated+adjNet;
-    const assigned=allAssigned;
+    const balance=totalPaycheck+credited-allocated+adjNet;
+    const assigned=allExpenses;
     const paid=deducted;
-    const unpaid=allAssigned.filter(b=>b.status==='unpaid'||!b.status);
-    const funded=totalPaycheck;
-    return{funded,allocated,manual:0,spent,balance,paid,unpaid,assigned,isBillsPay:true,totalPaycheck,adjNet};
+    const unpaid=allExpenses.filter(b=>b.status==='unpaid'||!b.status);
+    const funded=totalPaycheck+credited;
+    return{funded,allocated,manual:0,spent,balance,paid,unpaid,assigned,isBillsPay:true,totalPaycheck,credited,adjNet,allIncome};
   }
 
   const assigned=bills.filter(b=>b.account===acctId&&b.type!=='income');
@@ -1532,25 +1535,26 @@ function renderLedger(){
   const allBills=state[m].bills||[];
 
   if(isBillsPay){
-    // Bills/Pay ledger: paycheck is the deposit, assigned bills route out to sub-buckets
     const payTotal=getPeriods().reduce((s,p)=>s+(state[m].pay[p.id]||0),0);
     const allAssigned=allBills.filter(b=>b.account&&b.account!==''&&b.type!=='income');
     const totalAssigned=allAssigned.reduce((s,b)=>s+b.amount,0);
-    const balance=payTotal-totalAssigned;
+    const incBillsTotal=allBills.filter(b=>b.account==='Bills/Pay'&&b.type==='income').reduce((s,b)=>s+b.amount,0);
+    const balance=payTotal+incBillsTotal-totalAssigned;
 
     document.getElementById('ledger-header').innerHTML=`
       <div class="ledger-acct-header">
         <div class="ledger-acct-icon" style="background:${a.color}22">${a.emoji}</div>
         <div><div class="ledger-acct-name">${a.label}</div><div class="ledger-acct-sub">${monthLabel}</div></div>
       </div>
-      <div class="ledger-balance-box">
-        <div class="lbb-card"><div class="lbb-label">Paycheck In</div><div class="lbb-val" style="color:var(--green)">${fmt(payTotal)}</div></div>
+      <div class="ledger-balance-box" style="grid-template-columns:1fr 1fr">
+        <div class="lbb-card"><div class="lbb-label">Paycheck</div><div class="lbb-val" style="color:var(--green)">${fmt(payTotal)}</div></div>
+        <div class="lbb-card"><div class="lbb-label">Credits Added</div><div class="lbb-val" style="color:var(--green)">${fmt(incBillsTotal)}</div></div>
         <div class="lbb-card"><div class="lbb-label">Routed Out</div><div class="lbb-val" style="color:var(--red)">${fmt(totalAssigned)}</div></div>
         <div class="lbb-card"><div class="lbb-label">Unassigned</div><div class="lbb-val" style="color:${balance>=0?'var(--green)':'var(--red)'}">${balance>=0?'':'-'}${fmt(Math.abs(balance))}</div></div>
       </div>`;
     document.getElementById('ledger-fund-row').innerHTML='';
 
-    // Show each paycheck period as deposit, then each assigned bill as routed out
+    // Show each paycheck period as deposit, then income credits, then each assigned bill as routed out
     let running=payTotal;
     const rows=[];
     getPeriods().forEach(p=>{
@@ -1560,6 +1564,19 @@ function renderLedger(){
         <div class="ledger-txn-icon credit">💰</div>
         <div class="ledger-txn-info"><div class="ledger-txn-name">${esc(periodLabel(p))} Paycheck</div><div class="ledger-txn-meta">Deposit</div></div>
         <div><div class="ledger-txn-amt credit">+${fmt(pAmt)}</div></div>
+      </div>`);
+    });
+    // Income/credit bills assigned to Bills/Pay
+    const incBills=allBills.filter(b=>b.account==='Bills/Pay'&&b.type==='income');
+    incBills.forEach(b=>{
+      running+=b.amount;
+      rows.push(`<div class="ledger-txn" onclick="openBillEdit('${b.id}');closeAcctLedger()">
+        <div class="ledger-txn-icon credit">➕</div>
+        <div class="ledger-txn-info">
+          <div class="ledger-txn-name">${esc(b.name)}</div>
+          <div class="ledger-txn-meta">${periodLabel(periodById(b.period))||''} · Credit/Income</div>
+        </div>
+        <div><div class="ledger-txn-amt credit">+${fmt(b.amount)}</div></div>
       </div>`);
     });
     allAssigned.sort((a,b)=>a.name.localeCompare(b.name)).forEach(b=>{
@@ -1807,8 +1824,15 @@ function renderOverview(){
     if(isBillsPay){
       const payTotal=periods.reduce((s,p)=>s+(pay[p.id]||0),0);
       const totalAssigned=all.filter(b=>b.account&&b.account!==''&&b.type!=='income').reduce((s,b)=>s+b.amount,0);
+      const totalCredited=all.filter(b=>b.account&&b.account!==''&&b.type==='income').reduce((s,b)=>s+b.amount,0);
       const adjNet=result.adjNet||0;
-      displayBalance=payTotal-totalAssigned+adjNet;
+      displayBalance=payTotal+totalCredited-totalAssigned+adjNet;
+      inLabel='Paycheck+Credits'; inVal=fmt(payTotal+(totalCredited||0));
+      outLabel='Assigned'; outVal=totalAssigned>0?fmt(totalAssigned):'—';
+      hasBills=payTotal>0||totalCredited>0||totalAssigned>0;
+      pct=( payTotal+totalCredited)>0?Math.min(100,Math.round(totalAssigned/(payTotal+totalCredited)*100)):0;
+      barColor=pct===100?'var(--green)':pct>80?'var(--yellow)':a.color;
+    }
       inLabel='Paycheck'; inVal=payTotal>0?fmt(payTotal):'—';
       outLabel='Assigned'; outVal=totalAssigned>0?fmt(totalAssigned):'—';
       hasBills=payTotal>0;
