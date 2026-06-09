@@ -17,6 +17,7 @@
 body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;background:var(--bg);color:var(--text);min-height:100vh;max-width:430px;margin:0 auto;}
 #app-screen{padding-bottom:110px;display:flex;flex-direction:column;}
 #sec-add{overflow-y:auto;max-height:calc(100vh - 280px)}
+#sec-add.visible{overflow-y:auto;max-height:calc(100vh - 200px)}
 #auth-screen{position:fixed;inset:0;z-index:999;max-width:430px;margin:0 auto;overflow-y:auto;padding-bottom:24px;background:var(--bg)}
 
 .header{padding:18px 18px 0;background:linear-gradient(180deg,#1a1f30 0%,transparent 100%)}
@@ -620,6 +621,7 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;backgrou
 
 <!-- ADD -->
 <div class="section" id="sec-add">
+  <button class="btn-primary" onclick="addBill()" style="margin-bottom:12px">Save Bill</button>
   <div class="form-card">
     <div class="form-row">
       <div class="form-label">Type</div>
@@ -654,21 +656,17 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;backgrou
     </div>
     <div class="form-row">
       <div class="form-label">Pay Period</div>
-      <select class="form-select" id="add-period">
-        <option value="1">1st</option>
-        <option value="10">10th</option>
-        <option value="25">25th</option>
-      </select>
+      <select class="form-select" id="add-period"></select>
     </div>
     <div class="form-row">
       <div class="form-label">Status</div>
       <select class="form-select" id="add-status">
         <option value="unpaid">Unpaid</option>
+        <option value="pending">Pending</option>
+        <option value="autopay">Auto Pay</option>
         <option value="paid">Paid</option>
-        <option value="auto">Auto Pay</option>
       </select>
     </div>
-    <button class="btn-primary" onclick="addBill()" style="position:sticky;bottom:0;margin-top:10px">Save Bill</button>
   </div>
 </div>
 
