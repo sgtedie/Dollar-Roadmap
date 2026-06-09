@@ -967,22 +967,32 @@ async function handleAuth(){
   const password=document.getElementById('auth-password').value;
   const confirm=document.getElementById('auth-confirm').value;
   setAuthError('');setAuthInfo('');
-  if(!sb){setAuthError('Supabase is not configured yet. See README for setup instructions.');return;}
+  if(!sb){setAuthError('Supabase is not configured yet. See README.');return;}
   if(!username||!password){setAuthError('Please enter your username and password.');return;}
   if(!/^[a-zA-Z0-9_.-]+$/.test(username)){setAuthError('Username can only contain letters, numbers, _ . and -');return;}
   if(authMode==='signup'&&password!==confirm){setAuthError('Passwords do not match.');return;}
-  if(authMode==='signup'&&password.length<8){setAuthError('Password must be at least 8 characters.');return;}
+  if(authMode==='signup'&&password.length<6){setAuthError('Password must be at least 6 characters.');return;}
   const email=usernameToEmail(username);
+  console.log('Auth attempt:', authMode, email);
   setAuthLoading(true);
-  if(authMode==='signin'){
-    const{error}=await sb.auth.signInWithPassword({email,password});
-    if(error){setAuthLoading(false);setAuthError('Invalid username or password.');return;}
-  } else {
-    const{error}=await sb.auth.signUp({email,password});
-    if(error){setAuthLoading(false);setAuthError(error.message);return;}
+  try{
+    if(authMode==='signin'){
+      const{data,error}=await sb.auth.signInWithPassword({email,password});
+      console.log('Sign in result:', data, error);
+      if(error){setAuthLoading(false);setAuthError('Invalid username or password. Have you created an account yet?');return;}
+    } else {
+      const{data,error}=await sb.auth.signUp({email,password});
+      console.log('Sign up result:', data, error);
+      if(error){setAuthLoading(false);setAuthError(error.message);return;}
+      setAuthLoading(false);
+      setAuthInfo('Account created! You can sign in now.');
+      showAuthTab('signin');return;
+    }
+  }catch(e){
+    console.error('Auth error:',e);
     setAuthLoading(false);
-    setAuthInfo('Account created! You can sign in now.');
-    showAuthTab('signin');return;
+    setAuthError('Something went wrong. Check your connection and try again.');
+    return;
   }
   setAuthLoading(false);
 }
