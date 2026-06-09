@@ -658,15 +658,6 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;backgrou
       <div class="form-label">Pay Period</div>
       <select class="form-select" id="add-period"></select>
     </div>
-    <div class="form-row">
-      <div class="form-label">Status</div>
-      <select class="form-select" id="add-status">
-        <option value="unpaid">Unpaid</option>
-        <option value="pending">Pending</option>
-        <option value="autopay">Auto Pay</option>
-        <option value="paid">Paid</option>
-      </select>
-    </div>
   </div>
 </div>
 
@@ -2001,7 +1992,7 @@ function addBill(){
   const name=document.getElementById('add-name').value.trim();
   const amount=parseFloat(document.getElementById('add-amount').value);
   const period=document.getElementById('add-period').value;
-  const status=document.getElementById('add-status').value;
+  const status='unpaid';
   if(!name){showToast('Enter a name',true);return;}
   if(!amount||isNaN(amount)||amount<=0){showToast('Enter a valid amount',true);return;}
   const m=mk();ensureMonth(m);
