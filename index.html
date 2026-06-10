@@ -359,7 +359,11 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;backgrou
 .park-action-btn{background:none;border:none;cursor:pointer;font-size:12px;opacity:.4;padding:3px 4px;transition:all .2s;border-radius:5px;color:var(--muted)}
 .park-action-btn:hover{opacity:1;background:var(--border)}
 
-/* CARRY OVER ROWS */
+/* SCAN TYPE BUTTONS */
+.scan-type-btn{flex:1;padding:9px 0;border:1px solid var(--border);background:var(--bg);color:var(--muted);border-radius:10px;font-size:12px;font-weight:700;cursor:pointer;transition:all .2s;text-align:center}
+.scan-type-btn.active.expense{background:rgba(248,113,113,.15);border-color:var(--red);color:var(--red)}
+.scan-type-btn.active.income{background:rgba(52,211,153,.15);border-color:var(--green);color:var(--green)}
+@keyframes spin{from{transform:rotate(0deg)}to{transform:rotate(360deg)}}
 .co-row{display:flex;align-items:center;gap:10px;padding:9px 12px;background:var(--card);border:1px solid var(--border);border-radius:10px;margin-bottom:6px;cursor:pointer;transition:all .2s}
 .co-row.selected{border-color:var(--accent);background:rgba(79,124,255,.08)}
 .co-check{width:18px;height:18px;border-radius:5px;border:2px solid var(--border);display:flex;align-items:center;justify-content:center;flex-shrink:0;font-size:11px;transition:all .2s}
@@ -707,16 +711,88 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;backgrou
   <div id="overview-all-periods"></div>
 </div>
 
-<!-- IMPORT -->
-<div class="section" id="sec-import">
-  <div class="import-tip"><strong>Your format detected:</strong> Monthly Bill Tracker with 1st / 10th / 25th pay periods and green account bucket labels. Import will read all monthly tabs and preserve account assignments.</div>
-  <div class="import-zone" onclick="document.getElementById('file-input').click()">
-    <div class="icon">📂</div>
-    <div class="title">Tap to import your Excel</div>
-    <div class="sub">.xlsx file — all tabs imported at once</div>
+<!-- IMPORT / SCAN -->
+<div class="section" id="sec-import" style="overflow-y:auto;max-height:calc(100vh - 185px);padding-bottom:70px">
+  <div class="section-title">Scan Receipt or Check</div>
+
+  <!-- UPLOAD ZONE -->
+  <div class="import-zone" id="scan-zone" onclick="document.getElementById('scan-file-input').click()" style="margin-bottom:12px">
+    <div class="icon" id="scan-zone-icon">📷</div>
+    <div class="title" id="scan-zone-title">Tap to scan receipt or check</div>
+    <div class="sub">Photo, screenshot, or PDF</div>
   </div>
-  <input type="file" id="file-input" accept=".xlsx,.xls,.csv" style="display:none" onchange="handleImport(event)"/>
-  <div class="import-result" id="import-result"></div>
+  <input type="file" id="scan-file-input" accept="image/*,application/pdf" style="display:none" onchange="handleScanUpload(event)"/>
+
+  <!-- SCAN RESULT FORM (hidden until scan) -->
+  <div id="scan-result-form" style="display:none">
+    <div class="form-card">
+      <div style="display:flex;align-items:center;gap:10px;margin-bottom:14px">
+        <div id="scan-type-icon" style="font-size:24px"></div>
+        <div>
+          <div style="font-size:13px;font-weight:700" id="scan-type-label">Receipt Scanned</div>
+          <div style="font-size:11px;color:var(--muted)" id="scan-confidence"></div>
+        </div>
+        <button onclick="resetScan()" style="margin-left:auto;background:none;border:1px solid var(--border);color:var(--muted);border-radius:8px;padding:4px 10px;font-size:11px;cursor:pointer">Rescan</button>
+      </div>
+
+      <div class="form-row">
+        <div class="form-label">Description</div>
+        <input class="form-input" id="scan-name" placeholder="Merchant / Payee name"/>
+      </div>
+      <div class="form-row">
+        <div class="form-label">Amount ($)</div>
+        <input class="form-input" id="scan-amount" type="number" min="0" step="0.01" placeholder="0.00"/>
+      </div>
+      <div class="form-row">
+        <div class="form-label">Date</div>
+        <input class="form-input" id="scan-date" type="date"/>
+      </div>
+      <div class="form-row">
+        <div class="form-label">Account Bucket</div>
+        <div class="acct-picker" id="scan-acct-picker">
+          <button class="apick-btn active" data-acct="" onclick="setScanAcct(this,'')">None</button>
+          <button class="apick-btn" data-acct="House Bills/Util" onclick="setScanAcct(this,'House Bills/Util')">🏠 House Bills</button>
+          <button class="apick-btn" data-acct="Groceries" onclick="setScanAcct(this,'Groceries')">🛒 Groceries</button>
+          <button class="apick-btn" data-acct="Bills/Pay" onclick="setScanAcct(this,'Bills/Pay')">💳 Bills/Pay</button>
+          <button class="apick-btn" data-acct="Tithe/Giving" onclick="setScanAcct(this,'Tithe/Giving')">✝️ Tithe</button>
+          <button class="apick-btn" data-acct="Savings" onclick="setScanAcct(this,'Savings')">🏦 Savings</button>
+          <button class="apick-btn" data-acct="Vehicle" onclick="setScanAcct(this,'Vehicle')">🚗 Vehicle</button>
+          <button class="apick-btn" data-acct="Em Fun $" onclick="setScanAcct(this,'Em Fun $')">💜 Em Fun</button>
+          <button class="apick-btn" data-acct="Cody Fun $" onclick="setScanAcct(this,'Cody Fun $')">💚 Cody Fun</button>
+        </div>
+      </div>
+      <div class="form-row">
+        <div class="form-label">Type</div>
+        <div style="display:flex;gap:6px">
+          <button class="scan-type-btn active expense" id="stype-expense" onclick="setScanType('expense')">💸 Expense</button>
+          <button class="scan-type-btn income" id="stype-income" onclick="setScanType('income')">💰 Income/Check</button>
+        </div>
+      </div>
+      <div class="form-row">
+        <div class="form-label">Pay Period</div>
+        <select class="form-select" id="scan-period"></select>
+      </div>
+      <button class="btn-primary" onclick="saveScanEntry()">Save Entry</button>
+    </div>
+
+    <!-- SCANNED IMAGE PREVIEW -->
+    <div id="scan-preview-wrap" style="margin-top:12px;border-radius:12px;overflow:hidden;border:1px solid var(--border);display:none">
+      <img id="scan-preview-img" style="width:100%;display:block;max-height:200px;object-fit:cover"/>
+    </div>
+  </div>
+
+  <!-- SCANNING STATE -->
+  <div id="scan-loading" style="display:none;text-align:center;padding:40px 20px">
+    <div style="font-size:36px;margin-bottom:12px;animation:spin 1s linear infinite">⏳</div>
+    <div style="font-size:14px;font-weight:700;margin-bottom:6px">Reading your document…</div>
+    <div style="font-size:12px;color:var(--muted)" id="scan-loading-msg">Extracting amount and details</div>
+  </div>
+
+  <!-- PAST SCANNED ENTRIES -->
+  <div id="scan-history-section" style="margin-top:16px">
+    <div class="section-title">Recent Scans</div>
+    <div id="scan-history-list"></div>
+  </div>
 </div>
 
 <div class="toast" id="toast"></div>
@@ -2465,6 +2541,7 @@ function switchSection(s){
   document.getElementById('sec-'+s)?.classList.add('visible');
   document.getElementById('stab-'+s)?.classList.add('active');
   if(s==='overview')renderOverview();
+  if(s==='import'){resetScan();renderScanHistory();}
 }
 function switchNav(n){
   document.querySelectorAll('.nav-btn').forEach(x=>x.classList.remove('active'));
@@ -2477,7 +2554,216 @@ function showToast(msg,isError=false){
   setTimeout(()=>el.classList.remove('show'),2500);
 }
 
-// ── INIT handled by Supabase auth above ───────────────────────────────────────
+// ── RECEIPT / CHECK SCANNER ───────────────────────────────────────────────────
+let scanAcct='';
+let scanType='expense';
+let scanImageBase64=null;
+let scanImageMime='image/jpeg';
+
+function setScanAcct(btn,acct){
+  scanAcct=acct;
+  document.querySelectorAll('#scan-acct-picker .apick-btn').forEach(b=>b.classList.remove('active'));
+  btn.classList.add('active');
+}
+function setScanType(t){
+  scanType=t;
+  document.querySelectorAll('.scan-type-btn').forEach(b=>b.classList.remove('active'));
+  document.getElementById('stype-'+t).classList.add('active');
+}
+
+function resetScan(){
+  document.getElementById('scan-result-form').style.display='none';
+  document.getElementById('scan-zone').style.display='';
+  document.getElementById('scan-loading').style.display='none';
+  scanImageBase64=null;
+  document.getElementById('scan-file-input').value='';
+  renderScanHistory();
+}
+
+async function handleScanUpload(e){
+  const file=e.target.files[0];
+  if(!file)return;
+  // Show loading
+  document.getElementById('scan-zone').style.display='none';
+  document.getElementById('scan-result-form').style.display='none';
+  document.getElementById('scan-loading').style.display='block';
+  document.getElementById('scan-loading-msg').textContent='Reading your document…';
+
+  try{
+    // Convert to base64
+    const base64=await new Promise((res,rej)=>{
+      const r=new FileReader();
+      r.onload=()=>res(r.result.split(',')[1]);
+      r.onerror=rej;
+      r.readAsDataURL(file);
+    });
+    scanImageBase64=base64;
+    scanImageMime=file.type||'image/jpeg';
+
+    // Show image preview
+    const previewWrap=document.getElementById('scan-preview-wrap');
+    const previewImg=document.getElementById('scan-preview-img');
+    if(file.type.startsWith('image/')){
+      previewImg.src='data:'+scanImageMime+';base64,'+base64;
+      previewWrap.style.display='block';
+    } else {
+      previewWrap.style.display='none';
+    }
+
+    document.getElementById('scan-loading-msg').textContent='Extracting amount and details…';
+
+    // Call Claude API to read the document
+    const response=await fetch('https://api.anthropic.com/v1/messages',{
+      method:'POST',
+      headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({
+        model:'claude-sonnet-4-20250514',
+        max_tokens:500,
+        messages:[{
+          role:'user',
+          content:[
+            {type:'image',source:{type:'base64',media_type:scanImageMime,data:base64}},
+            {type:'text',text:`You are reading a financial document (receipt, check, or invoice). Extract the key details and respond ONLY with a JSON object, no markdown, no explanation:
+{
+  "type": "receipt" or "check" or "invoice",
+  "merchant": "store/payee name or check payer name",
+  "amount": 12.34,
+  "date": "YYYY-MM-DD or null if unclear",
+  "confidence": "high" or "medium" or "low",
+  "notes": "any brief relevant detail"
+}
+If it's a check, merchant = who wrote the check (payer). Amount should be the total/final amount as a number only.`}
+          ]
+        }]
+      })
+    });
+
+    const data=await response.json();
+    const text=data.content?.map(c=>c.text||'').join('');
+    let parsed;
+    try{
+      const clean=text.replace(/```json|```/g,'').trim();
+      parsed=JSON.parse(clean);
+    }catch(err){
+      throw new Error('Could not read document. Try a clearer photo.');
+    }
+
+    // Populate form
+    const isCheck=parsed.type==='check';
+    document.getElementById('scan-type-icon').textContent=isCheck?'💵':'🧾';
+    document.getElementById('scan-type-label').textContent=isCheck?'Check Detected':'Receipt Detected';
+    document.getElementById('scan-confidence').textContent='Confidence: '+(parsed.confidence||'medium')+(parsed.notes?' · '+parsed.notes:'');
+    document.getElementById('scan-name').value=parsed.merchant||'';
+    document.getElementById('scan-amount').value=parsed.amount||'';
+
+    // Set date
+    const today=new Date().toISOString().slice(0,10);
+    document.getElementById('scan-date').value=parsed.date&&parsed.date!=='null'?parsed.date:today;
+
+    // Auto-set type: checks = income, receipts = expense
+    setScanType(isCheck?'income':'expense');
+
+    // Populate period select
+    const sel=document.getElementById('scan-period');
+    sel.innerHTML=getPeriods().map(p=>`<option value="${p.id}">${esc(periodLabel(p))}</option>`).join('');
+
+    // Auto-guess account from merchant name
+    const merchant=(parsed.merchant||'').toLowerCase();
+    let guessAcct='';
+    if(merchant.includes('grocer')||merchant.includes('walmart')||merchant.includes('costco')||merchant.includes('food')||merchant.includes('kroger')||merchant.includes('safeway'))guessAcct='Groceries';
+    else if(merchant.includes('gas')||merchant.includes('fuel')||merchant.includes('shell')||merchant.includes('chevron')||merchant.includes('exxon'))guessAcct='Vehicle';
+    else if(merchant.includes('church')||merchant.includes('tithe'))guessAcct='Tithe/Giving';
+    if(guessAcct){
+      scanAcct=guessAcct;
+      document.querySelectorAll('#scan-acct-picker .apick-btn').forEach(b=>{
+        b.classList.toggle('active',b.dataset.acct===guessAcct);
+      });
+    }
+
+    document.getElementById('scan-loading').style.display='none';
+    document.getElementById('scan-result-form').style.display='block';
+
+  }catch(err){
+    document.getElementById('scan-loading').style.display='none';
+    document.getElementById('scan-zone').style.display='';
+    showToast(err.message||'Could not read document',true);
+    console.error(err);
+  }
+  e.target.value='';
+}
+
+function saveScanEntry(){
+  const name=document.getElementById('scan-name').value.trim();
+  const amount=parseFloat(document.getElementById('scan-amount').value);
+  const date=document.getElementById('scan-date').value;
+  const period=document.getElementById('scan-period').value;
+  if(!name){showToast('Enter a description',true);return;}
+  if(!amount||isNaN(amount)||amount<=0){showToast('Enter a valid amount',true);return;}
+
+  const m=mk();ensureMonth(m);
+  if(!state[m].bills)state[m].bills=[];
+
+  // Save as a parked payment in the account OR as a bill
+  if(scanAcct){
+    // Park as payment in the account ledger
+    const dateStr=date?new Date(date+'T00:00:00').toLocaleDateString('en-US',{month:'short',day:'numeric',year:'numeric'}):new Date().toLocaleDateString('en-US',{month:'short',day:'numeric',year:'numeric'});
+    addParkedPayment(m,scanAcct,{
+      id:Date.now().toString()+Math.random(),
+      name,amount,
+      status:scanType==='income'?'paid':'paid',
+      date:dateStr,
+      scanned:true
+    });
+  } else {
+    // Save as a bill
+    state[m].bills.push({
+      id:Date.now().toString()+Math.random(),
+      name,amount,
+      type:scanType,
+      period,
+      status:'paid',
+      account:scanAcct,
+      due:date||''
+    });
+  }
+
+  // Save scan to history
+  if(!state[m].scanHistory)state[m].scanHistory=[];
+  state[m].scanHistory.unshift({
+    id:Date.now().toString(),
+    name,amount,date,
+    type:scanType,
+    account:scanAcct,
+    scannedAt:new Date().toLocaleDateString('en-US',{month:'short',day:'numeric',year:'numeric'})
+  });
+
+  save();renderAll();
+  resetScan();
+  showToast(`✓ ${scanType==='income'?'Check':'Receipt'} saved — ${fmt(amount)}`);
+}
+
+function renderScanHistory(){
+  const m=mk();
+  const history=(state[m]?.scanHistory||[]);
+  const el=document.getElementById('scan-history-list');
+  if(!history.length){
+    el.innerHTML='<div class="empty-state" style="padding:20px 0"><div class="icon">📄</div>No scans this month yet.</div>';
+    return;
+  }
+  el.innerHTML=history.slice(0,10).map(h=>{
+    const a=acctInfo(h.account);
+    return`<div style="background:var(--card);border:1px solid var(--border);border-radius:12px;padding:12px;margin-bottom:8px;display:flex;align-items:center;gap:10px">
+      <div style="font-size:20px">${h.type==='income'?'💵':'🧾'}</div>
+      <div style="flex:1;min-width:0">
+        <div style="font-size:13px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${esc(h.name)}</div>
+        <div style="font-size:10px;color:var(--muted);margin-top:2px">${h.date||h.scannedAt}${a?' · '+a.emoji+' '+a.label:''}</div>
+      </div>
+      <div style="font-size:14px;font-weight:700;color:${h.type==='income'?'var(--green)':'var(--red)'}">
+        ${h.type==='income'?'+':'-'}${fmt(h.amount)}
+      </div>
+    </div>`;
+  }).join('');
+}
 </script>
 </div><!-- end #app-screen -->
 </body>
