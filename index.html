@@ -20,7 +20,6 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;backgrou
 #sec-add.visible{overflow-y:auto;max-height:calc(100vh - 200px)}
 #sec-bills{overflow-y:auto;max-height:calc(100vh - 200px);padding-bottom:70px}
 #sec-overview{overflow-y:auto;max-height:calc(100vh - 185px);padding-bottom:70px}
-#sec-import{overflow-y:auto;max-height:calc(100vh - 185px);padding-bottom:70px}
 #auth-screen{position:fixed;inset:0;z-index:999;max-width:430px;margin:0 auto;overflow-y:auto;padding-bottom:24px;background:var(--bg)}
 
 .header{padding:18px 18px 0;background:linear-gradient(180deg,#1a1f30 0%,transparent 100%)}
@@ -631,7 +630,7 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;backgrou
   <button class="stab active" id="stab-bills" onclick="switchSection('bills')">Bills</button>
   <button class="stab" id="stab-add" onclick="switchSection('add')">+ Add</button>
   <button class="stab" id="stab-overview" onclick="switchSection('overview')">Month</button>
-  <button class="stab" id="stab-import" onclick="switchSection('import')">Import</button>
+  
 </div>
 
 <!-- BILLS -->
@@ -711,89 +710,6 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;backgrou
   <div id="overview-all-periods"></div>
 </div>
 
-<!-- IMPORT / SCAN -->
-<div class="section" id="sec-import" style="overflow-y:auto;max-height:calc(100vh - 185px);padding-bottom:70px">
-  <div class="section-title">Scan Receipt or Check</div>
-
-  <!-- UPLOAD ZONE -->
-  <div class="import-zone" id="scan-zone" onclick="document.getElementById('scan-file-input').click()" style="margin-bottom:12px">
-    <div class="icon" id="scan-zone-icon">📷</div>
-    <div class="title" id="scan-zone-title">Tap to scan receipt or check</div>
-    <div class="sub">Photo, screenshot, or PDF</div>
-  </div>
-  <input type="file" id="scan-file-input" accept="image/*,application/pdf" style="display:none" onchange="handleScanUpload(event)"/>
-
-  <!-- SCAN RESULT FORM (hidden until scan) -->
-  <div id="scan-result-form" style="display:none">
-    <div class="form-card">
-      <div style="display:flex;align-items:center;gap:10px;margin-bottom:14px">
-        <div id="scan-type-icon" style="font-size:24px"></div>
-        <div>
-          <div style="font-size:13px;font-weight:700" id="scan-type-label">Receipt Scanned</div>
-          <div style="font-size:11px;color:var(--muted)" id="scan-confidence"></div>
-        </div>
-        <button onclick="resetScan()" style="margin-left:auto;background:none;border:1px solid var(--border);color:var(--muted);border-radius:8px;padding:4px 10px;font-size:11px;cursor:pointer">Rescan</button>
-      </div>
-
-      <div class="form-row">
-        <div class="form-label">Description</div>
-        <input class="form-input" id="scan-name" placeholder="Merchant / Payee name"/>
-      </div>
-      <div class="form-row">
-        <div class="form-label">Amount ($)</div>
-        <input class="form-input" id="scan-amount" type="number" min="0" step="0.01" placeholder="0.00"/>
-      </div>
-      <div class="form-row">
-        <div class="form-label">Date</div>
-        <input class="form-input" id="scan-date" type="date"/>
-      </div>
-      <div class="form-row">
-        <div class="form-label">Account Bucket</div>
-        <div class="acct-picker" id="scan-acct-picker">
-          <button class="apick-btn active" data-acct="" onclick="setScanAcct(this,'')">None</button>
-          <button class="apick-btn" data-acct="House Bills/Util" onclick="setScanAcct(this,'House Bills/Util')">🏠 House Bills</button>
-          <button class="apick-btn" data-acct="Groceries" onclick="setScanAcct(this,'Groceries')">🛒 Groceries</button>
-          <button class="apick-btn" data-acct="Bills/Pay" onclick="setScanAcct(this,'Bills/Pay')">💳 Bills/Pay</button>
-          <button class="apick-btn" data-acct="Tithe/Giving" onclick="setScanAcct(this,'Tithe/Giving')">✝️ Tithe</button>
-          <button class="apick-btn" data-acct="Savings" onclick="setScanAcct(this,'Savings')">🏦 Savings</button>
-          <button class="apick-btn" data-acct="Vehicle" onclick="setScanAcct(this,'Vehicle')">🚗 Vehicle</button>
-          <button class="apick-btn" data-acct="Em Fun $" onclick="setScanAcct(this,'Em Fun $')">💜 Em Fun</button>
-          <button class="apick-btn" data-acct="Cody Fun $" onclick="setScanAcct(this,'Cody Fun $')">💚 Cody Fun</button>
-        </div>
-      </div>
-      <div class="form-row">
-        <div class="form-label">Type</div>
-        <div style="display:flex;gap:6px">
-          <button class="scan-type-btn active expense" id="stype-expense" onclick="setScanType('expense')">💸 Expense</button>
-          <button class="scan-type-btn income" id="stype-income" onclick="setScanType('income')">💰 Income/Check</button>
-        </div>
-      </div>
-      <div class="form-row">
-        <div class="form-label">Pay Period</div>
-        <select class="form-select" id="scan-period"></select>
-      </div>
-      <button class="btn-primary" onclick="saveScanEntry()">Save Entry</button>
-    </div>
-
-    <!-- SCANNED IMAGE PREVIEW -->
-    <div id="scan-preview-wrap" style="margin-top:12px;border-radius:12px;overflow:hidden;border:1px solid var(--border);display:none">
-      <img id="scan-preview-img" style="width:100%;display:block;max-height:200px;object-fit:cover"/>
-    </div>
-  </div>
-
-  <!-- SCANNING STATE -->
-  <div id="scan-loading" style="display:none;text-align:center;padding:40px 20px">
-    <div style="font-size:36px;margin-bottom:12px;animation:spin 1s linear infinite">⏳</div>
-    <div style="font-size:14px;font-weight:700;margin-bottom:6px">Reading your document…</div>
-    <div style="font-size:12px;color:var(--muted)" id="scan-loading-msg">Extracting amount and details</div>
-  </div>
-
-  <!-- PAST SCANNED ENTRIES -->
-  <div id="scan-history-section" style="margin-top:16px">
-    <div class="section-title">Recent Scans</div>
-    <div id="scan-history-list"></div>
-  </div>
-</div>
 
 <div class="toast" id="toast"></div>
 
@@ -908,7 +824,7 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;backgrou
   <button class="nav-btn active" id="nav-bills" onclick="switchNav('bills')"><span class="nav-icon">📋</span>Bills</button>
   <button class="nav-btn" id="nav-add" onclick="switchNav('add')"><span class="nav-icon">➕</span>Add</button>
   <button class="nav-btn" id="nav-overview" onclick="switchNav('overview')"><span class="nav-icon">📊</span>Month</button>
-  <button class="nav-btn" id="nav-import" onclick="switchNav('import')"><span class="nav-icon">📂</span>Import</button>
+  
 </div>
 
 <script>
