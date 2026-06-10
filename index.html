@@ -1587,11 +1587,17 @@ function renderLedger(){
   const allBills=state[m].bills||[];
 
   if(isBillsPay){
-    const payTotal=getPeriods().reduce((s,p)=>s+(state[m].pay[p.id]||0),0);
-    const allAssigned=allBills.filter(b=>b.account&&b.account!==''&&b.type!=='income');
-    const totalAssigned=allAssigned.reduce((s,b)=>s+b.amount,0);
-    const incBillsTotal=allBills.filter(b=>b.account==='Bills/Pay'&&b.type==='income').reduce((s,b)=>s+b.amount,0);
-    const balance=payTotal+incBillsTotal-totalAssigned;
+    const periods2=getPeriods();
+    // Split into received and expected
+    const receivedPeriods=periods2.filter(p=>isPayReceived(m,p.id));
+    const expectedPeriods=periods2.filter(p=>!isPayReceived(m,p.id));
+    const payReceived=receivedPeriods.reduce((s,p)=>s+(state[m].pay[p.id]||0),0);
+    const payExpected=expectedPeriods.reduce((s,p)=>s+(state[m].pay[p.id]||0),0);
+    const receivedAssigned=allBills.filter(b=>b.account&&b.account!==''&&b.type!=='income'&&isPayReceived(m,b.period));
+    const expectedAssigned=allBills.filter(b=>b.account&&b.account!==''&&b.type!=='income'&&!isPayReceived(m,b.period));
+    const totalAssigned=receivedAssigned.reduce((s,b)=>s+b.amount,0);
+    const incBillsTotal=allBills.filter(b=>b.account==='Bills/Pay'&&b.type==='income'&&isPayReceived(m,b.period)).reduce((s,b)=>s+b.amount,0);
+    const balance=payReceived+incBillsTotal-totalAssigned;
 
     document.getElementById('ledger-header').innerHTML=`
       <div class="ledger-acct-header">
@@ -1599,27 +1605,30 @@ function renderLedger(){
         <div><div class="ledger-acct-name">${a.label}</div><div class="ledger-acct-sub">${monthLabel}</div></div>
       </div>
       <div class="ledger-balance-box" style="grid-template-columns:1fr 1fr">
-        <div class="lbb-card"><div class="lbb-label">Paycheck</div><div class="lbb-val" style="color:var(--green)">${fmt(payTotal)}</div></div>
+        <div class="lbb-card"><div class="lbb-label">Paycheck</div><div class="lbb-val" style="color:var(--green)">${fmt(payReceived)}</div></div>
         <div class="lbb-card"><div class="lbb-label">Credits Added</div><div class="lbb-val" style="color:var(--green)">${fmt(incBillsTotal)}</div></div>
         <div class="lbb-card"><div class="lbb-label">Routed Out</div><div class="lbb-val" style="color:var(--red)">${fmt(totalAssigned)}</div></div>
-        <div class="lbb-card"><div class="lbb-label">Unassigned</div><div class="lbb-val" style="color:${balance>=0?'var(--green)':'var(--red)'}">${balance>=0?'':'-'}${fmt(Math.abs(balance))}</div></div>
+        <div class="lbb-card"><div class="lbb-label">Balance</div><div class="lbb-val" style="color:${balance>=0?'var(--green)':'var(--red)'}">${balance>=0?'':'-'}${fmt(Math.abs(balance))}</div></div>
       </div>`;
     document.getElementById('ledger-fund-row').innerHTML='';
 
-    // Show each paycheck period as deposit, then income credits, then each assigned bill as routed out
-    let running=payTotal;
+    let running=payReceived;
     const rows=[];
-    getPeriods().forEach(p=>{
+
+    // RECEIVED periods first — full color, affect running total
+    receivedPeriods.forEach(p=>{
       const pAmt=state[m].pay[p.id]||0;
       if(!pAmt)return;
+      running+=0; // already in payReceived
       rows.push(`<div class="ledger-txn">
         <div class="ledger-txn-icon credit">💰</div>
-        <div class="ledger-txn-info"><div class="ledger-txn-name">${esc(periodLabel(p))} Paycheck</div><div class="ledger-txn-meta">Deposit</div></div>
+        <div class="ledger-txn-info"><div class="ledger-txn-name">${esc(periodLabel(p))} Paycheck</div><div class="ledger-txn-meta">✓ Received</div></div>
         <div><div class="ledger-txn-amt credit">+${fmt(pAmt)}</div></div>
       </div>`);
     });
-    // Income/credit bills assigned to Bills/Pay
-    const incBills=allBills.filter(b=>b.account==='Bills/Pay'&&b.type==='income');
+
+    // Income/credit bills from received periods
+    const incBills=allBills.filter(b=>b.account==='Bills/Pay'&&b.type==='income'&&isPayReceived(m,b.period));
     incBills.forEach(b=>{
       running+=b.amount;
       rows.push(`<div class="ledger-txn" onclick="openBillEdit('${b.id}');closeAcctLedger()">
@@ -1631,7 +1640,9 @@ function renderLedger(){
         <div><div class="ledger-txn-amt credit">+${fmt(b.amount)}</div></div>
       </div>`);
     });
-    allAssigned.sort((a,b)=>a.name.localeCompare(b.name)).forEach(b=>{
+
+    // Bills from RECEIVED periods — affect running total
+    receivedAssigned.sort((x,y)=>x.name.localeCompare(y.name)).forEach(b=>{
       running-=b.amount;
       const bucketInfo=acctInfo(b.account);
       const runColor=running>=0?'var(--green)':'var(--red)';
@@ -1647,9 +1658,35 @@ function renderLedger(){
         </div>
       </div>`);
     });
+
+    // EXPECTED periods — greyed out, don't affect running total
+    if(expectedPeriods.length>0){
+      rows.push(`<div style="font-size:11px;color:var(--yellow);font-weight:700;text-transform:uppercase;letter-spacing:.5px;padding:10px 4px 6px;margin-top:4px">⏳ Expected (not yet received)</div>`);
+      expectedPeriods.forEach(p=>{
+        const pAmt=state[m].pay[p.id]||0;
+        if(!pAmt)return;
+        rows.push(`<div class="ledger-txn" style="opacity:.45;border-color:rgba(251,191,36,.2)">
+          <div class="ledger-txn-icon" style="background:rgba(251,191,36,.1)">💰</div>
+          <div class="ledger-txn-info"><div class="ledger-txn-name">${esc(periodLabel(p))} Paycheck</div><div class="ledger-txn-meta" style="color:var(--yellow)">⏳ Expected · tap period tab to mark received</div></div>
+          <div><div class="ledger-txn-amt" style="color:var(--muted)">+${fmt(pAmt)}</div></div>
+        </div>`);
+      });
+      expectedAssigned.sort((x,y)=>x.name.localeCompare(y.name)).forEach(b=>{
+        const bucketInfo=acctInfo(b.account);
+        rows.push(`<div class="ledger-txn" style="opacity:.4;border-color:rgba(107,117,153,.15)" onclick="openBillEdit('${b.id}');closeAcctLedger()">
+          <div class="ledger-txn-icon debit" style="opacity:.5">${bucketInfo?bucketInfo.emoji:'💸'}</div>
+          <div class="ledger-txn-info">
+            <div class="ledger-txn-name">${esc(b.name)}</div>
+            <div class="ledger-txn-meta">→ ${bucketInfo?bucketInfo.label:'Unknown'} · pending paycheck</div>
+          </div>
+          <div><div class="ledger-txn-amt" style="color:var(--muted)">-${fmt(b.amount)}</div></div>
+        </div>`);
+      });
+    }
+
     document.getElementById('ledger-txns').innerHTML=
       `<div class="ledger-section-title">Transactions</div>`+rows.join('')+
-      (!allAssigned.length?'<div class="empty-state" style="padding:16px 0"><div class="icon">📋</div>No bills assigned to buckets yet.</div>':'');
+      (!receivedAssigned.length&&!expectedAssigned.length?'<div class="empty-state" style="padding:16px 0"><div class="icon">📋</div>No bills assigned to buckets yet.</div>':'');
     return;
   }
 
