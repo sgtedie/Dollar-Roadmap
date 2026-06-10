@@ -1143,7 +1143,7 @@ function renderPayBanner(){
     const expected=periods.filter(p=>!isPayReceived(m,p.id)).reduce((s,p)=>s+(pay[p.id]||0),0);
     const spent=(state[m].bills||[]).filter(b=>b.type!=='income'&&isPayReceived(m,b.period)).reduce((s,b)=>s+b.amount,0);
     document.getElementById('pay-period-label').textContent='Total Monthly Income';
-    document.getElementById('pay-amount-display').textContent=fmt(total)+(expected>0?` <span style="font-size:12px;color:var(--yellow)">(+${fmt(expected)} expected)</span>`:'');
+    document.getElementById('pay-amount-display').innerHTML=fmt(total)+(expected>0?` <span style="font-size:12px;color:var(--yellow)">(+${fmt(expected)} expected)</span>`:'');
     setRemaining(total-spent);
     document.getElementById('pay-edit-btn').style.display='none';
     document.getElementById('pay-received-toggle').style.display='none';
@@ -1597,7 +1597,8 @@ function renderLedger(){
     const expectedAssigned=allBills.filter(b=>b.account&&b.account!==''&&b.type!=='income'&&!isPayReceived(m,b.period));
     const totalAssigned=receivedAssigned.reduce((s,b)=>s+b.amount,0);
     const incBillsTotal=allBills.filter(b=>b.account==='Bills/Pay'&&b.type==='income'&&isPayReceived(m,b.period)).reduce((s,b)=>s+b.amount,0);
-    const balance=payReceived+incBillsTotal-totalAssigned;
+    const bpAdjNet=getAdjustments(m,'Bills/Pay').reduce((s,a)=>s+(a.type==='credit'||a.transferDir==='in'?a.amount:-a.amount),0);
+    const balance=payReceived+incBillsTotal-totalAssigned+bpAdjNet;
 
     document.getElementById('ledger-header').innerHTML=`
       <div class="ledger-acct-header">
@@ -1638,6 +1639,29 @@ function renderLedger(){
           <div class="ledger-txn-meta">${periodLabel(periodById(b.period))||''} · Credit/Income</div>
         </div>
         <div><div class="ledger-txn-amt credit">+${fmt(b.amount)}</div></div>
+      </div>`);
+    });
+
+    // Reconcile adjustments & transfers for Bills/Pay
+    const bpAdjs=getAdjustments(m,'Bills/Pay');
+    bpAdjs.forEach(adj=>{
+      const isTransfer=!!adj.transferId;
+      const icon=isTransfer?(adj.transferDir==='in'?'⬅️':'➡️'):(adj.type==='credit'?'➕':'➖');
+      const label=isTransfer?(adj.transferDir==='in'?'Transfer In':'Transfer Out'):(adj.type==='credit'?'Funds Added':'Funds Deducted')+' · Reconcile';
+      if(adj.type==='credit'||adj.transferDir==='in') running+=adj.amount;
+      else running-=adj.amount;
+      const runColor=running>=0?'var(--green)':'var(--red)';
+      rows.push(`<div class="ledger-reconcile">
+        <div class="ledger-reconcile-icon" style="${isTransfer?'background:rgba(79,124,255,.15)':''}">${icon}</div>
+        <div class="ledger-reconcile-info">
+          <div class="ledger-reconcile-name">${label}</div>
+          <div class="ledger-reconcile-reason">${esc(adj.reason)} · ${adj.date}</div>
+        </div>
+        <div>
+          <div class="ledger-reconcile-amt" style="color:${adj.type==='credit'||adj.transferDir==='in'?'var(--green)':'var(--red)'}">${adj.type==='credit'||adj.transferDir==='in'?'+':'-'}${fmt(adj.amount)}</div>
+          <div class="ledger-running" style="color:${runColor}">bal: ${fmt(running)}</div>
+        </div>
+        <button class="ledger-reconcile-del" onclick="deleteAdjustment('Bills/Pay','${adj.id}')" title="Remove">✕</button>
       </div>`);
     });
 
@@ -1919,15 +1943,17 @@ function renderOverview(){
     let displayBalance, inLabel, inVal, outLabel, outVal, pct, barColor, hasBills;
 
     if(isBillsPay){
-      const payTotal=periods.reduce((s,p)=>s+(pay[p.id]||0),0);
-      const totalAssigned=all.filter(b=>b.account&&b.account!==''&&b.type!=='income').reduce((s,b)=>s+b.amount,0);
-      const totalCredited=all.filter(b=>b.account&&b.account!==''&&b.type==='income').reduce((s,b)=>s+b.amount,0);
+      // Only count RECEIVED paychecks and their bills
+      const payReceived=periods.filter(p=>isPayReceived(m,p.id)).reduce((s,p)=>s+(pay[p.id]||0),0);
+      const payExpected=periods.filter(p=>!isPayReceived(m,p.id)).reduce((s,p)=>s+(pay[p.id]||0),0);
+      const totalAssigned=all.filter(b=>b.account&&b.account!==''&&b.type!=='income'&&isPayReceived(m,b.period)).reduce((s,b)=>s+b.amount,0);
+      const totalCredited=all.filter(b=>b.account&&b.account!==''&&b.type==='income'&&isPayReceived(m,b.period)).reduce((s,b)=>s+b.amount,0);
       const adjNet=result.adjNet||0;
-      displayBalance=payTotal+totalCredited-totalAssigned+adjNet;
-      inLabel='Paycheck+Credits'; inVal=fmt(payTotal+(totalCredited||0));
+      displayBalance=payReceived+totalCredited-totalAssigned+adjNet;
+      inLabel='Received'; inVal=payReceived>0?fmt(payReceived):'—';
       outLabel='Assigned'; outVal=totalAssigned>0?fmt(totalAssigned):'—';
-      hasBills=payTotal>0||totalCredited>0||totalAssigned>0;
-      pct=( payTotal+totalCredited)>0?Math.min(100,Math.round(totalAssigned/(payTotal+totalCredited)*100)):0;
+      hasBills=payReceived>0||totalCredited>0||totalAssigned>0||payExpected>0;
+      pct=(payReceived+totalCredited)>0?Math.min(100,Math.round(totalAssigned/(payReceived+totalCredited)*100)):0;
       barColor=pct===100?'var(--green)':pct>80?'var(--yellow)':a.color;
     } else {
       // Other buckets: In = bills assigned (from Bills/Pay), Out = paid, Balance = remaining + adjustments
