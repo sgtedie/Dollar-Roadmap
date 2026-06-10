@@ -476,7 +476,10 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;backgrou
   <div class="pay-banner-left">
     <div class="label" id="pay-period-label">1st Paycheck</div>
     <div class="amount" id="pay-amount-display">$0.00</div>
-    <button class="pay-edit-btn" id="pay-edit-btn" onclick="openPayModal()">Edit Pay Amount</button>
+    <div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap;margin-top:4px">
+      <button class="pay-edit-btn" id="pay-edit-btn" onclick="openPayModal()">Edit Pay Amount</button>
+      <div id="pay-received-toggle"></div>
+    </div>
   </div>
   <div class="pay-banner-right">
     <div class="label">Remaining</div>
@@ -1082,22 +1085,44 @@ function iconFor(name,type){
 // ── PERIOD TABS ───────────────────────────────────────────────────────────────
 function renderPeriodTabs(){
   const periods=getPeriods();
+  const m=mk();ensureMonth(m);
   const row=document.getElementById('period-tabs-row');
-  // individual period tabs use the user's name (falling back to day ordinal)
-  const periodBtns=periods.map(p=>`<button class="ptab${currentPeriod===p.id?' active':''}" onclick="setPeriod('${p.id}')">${esc(periodLabel(p))}</button>`).join('');
-  // "All" tab label: if 2 periods show both names joined, else just "All"
+  const periodBtns=periods.map(p=>{
+    const received=isPayReceived(m,p.id);
+    const dot=received
+      ?`<span style="display:inline-block;width:6px;height:6px;border-radius:50%;background:var(--green);margin-left:4px;vertical-align:middle"></span>`
+      :`<span style="display:inline-block;width:6px;height:6px;border-radius:50%;background:var(--yellow);margin-left:4px;vertical-align:middle"></span>`;
+    return`<button class="ptab${currentPeriod===p.id?' active':''}" onclick="setPeriod('${p.id}')">${esc(periodLabel(p))}${dot}</button>`;
+  }).join('');
   let allLabel='All';
   if(periods.length===2){
     const a=periodLabel(periods[0]),b=periodLabel(periods[1]);
     if(a&&b&&a!=='Paycheck'&&b!=='Paycheck')allLabel=a+' + '+b;
   }
   row.innerHTML=periodBtns+`<button class="ptab ptab-all${currentPeriod==='all'?' active':''}" onclick="setPeriod('all')">${esc(allLabel)}</button>`;
-  // also update the add-bill period dropdown to use user names
   const sel=document.getElementById('add-period');
   if(sel){
     sel.innerHTML=periods.map(p=>`<option value="${p.id}">${esc(periodLabel(p))}</option>`).join('');
     if(currentPeriod&&currentPeriod!=='all')sel.value=currentPeriod;
   }
+}
+
+// ── PAY RECEIVED STATUS ───────────────────────────────────────────────────────
+function isPayReceived(monthKey, periodId){
+  return (state[monthKey]?.payReceived||{})[periodId]===true;
+}
+function setPayReceived(monthKey, periodId, val){
+  if(!state[monthKey])state[monthKey]={pay:{},bills:[]};
+  if(!state[monthKey].payReceived)state[monthKey].payReceived={};
+  state[monthKey].payReceived[periodId]=val;
+}
+function togglePayReceived(periodId){
+  const m=mk();ensureMonth(m);
+  const cur=isPayReceived(m,periodId);
+  setPayReceived(m,periodId,!cur);
+  save();renderAll();
+  const p=periodById(periodId);
+  showToast(!cur?`✓ ${periodLabel(p)} paycheck marked Received`:`${periodLabel(p)} paycheck set to Expected`);
 }
 
 // ── RENDER ────────────────────────────────────────────────────────────────────
@@ -1114,23 +1139,35 @@ function renderPayBanner(){
   const m=mk();ensureMonth(m);
   const pay=state[m].pay;const periods=getPeriods();
   if(currentPeriod==='all'){
-    const total=periods.reduce((s,p)=>s+(pay[p.id]||0),0);
-    const spent=(state[m].bills||[]).filter(b=>b.type!=='income').reduce((s,b)=>s+b.amount,0);
+    const total=periods.filter(p=>isPayReceived(m,p.id)).reduce((s,p)=>s+(pay[p.id]||0),0);
+    const expected=periods.filter(p=>!isPayReceived(m,p.id)).reduce((s,p)=>s+(pay[p.id]||0),0);
+    const spent=(state[m].bills||[]).filter(b=>b.type!=='income'&&isPayReceived(m,b.period)).reduce((s,b)=>s+b.amount,0);
     document.getElementById('pay-period-label').textContent='Total Monthly Income';
-    document.getElementById('pay-amount-display').textContent=fmt(total);
+    document.getElementById('pay-amount-display').textContent=fmt(total)+(expected>0?` <span style="font-size:12px;color:var(--yellow)">(+${fmt(expected)} expected)</span>`:'');
     setRemaining(total-spent);
     document.getElementById('pay-edit-btn').style.display='none';
+    document.getElementById('pay-received-toggle').style.display='none';
   } else {
     const p=periodById(currentPeriod);
     const payAmt=pay[currentPeriod]||0;
+    const received=isPayReceived(m,currentPeriod);
     const subset=(state[m].bills||[]).filter(b=>b.period===currentPeriod);
-    const spent=subset.filter(b=>b.type!=='income').reduce((s,b)=>s+b.amount,0);
-    const inc=subset.filter(b=>b.type==='income').reduce((s,b)=>s+b.amount,0);
+    const spent=received?subset.filter(b=>b.type!=='income').reduce((s,b)=>s+b.amount,0):0;
+    const inc=received?subset.filter(b=>b.type==='income').reduce((s,b)=>s+b.amount,0):0;
     const dayLabel=p&&p.day?' ('+ordinal(p.day)+')':'';
     document.getElementById('pay-period-label').textContent=periodLabel(p)+' Paycheck'+dayLabel;
     document.getElementById('pay-amount-display').textContent=fmt(payAmt);
-    setRemaining(payAmt+inc-spent);
+    setRemaining(received?payAmt+inc-spent:0);
     document.getElementById('pay-edit-btn').style.display='';
+    // Show received toggle
+    const toggleEl=document.getElementById('pay-received-toggle');
+    toggleEl.style.display='';
+    toggleEl.innerHTML=`<button onclick="togglePayReceived('${currentPeriod}')" style="
+      padding:4px 12px;border-radius:99px;font-size:11px;font-weight:700;cursor:pointer;border:none;
+      background:${received?'rgba(52,211,153,.15)':'rgba(251,191,36,.15)'};
+      color:${received?'var(--green)':'var(--yellow)'};
+      border:1.5px solid ${received?'var(--green)':'var(--yellow)'}
+    ">${received?'✓ Received':'⏳ Expected — tap to mark received'}</button>`;
   }
 }
 function setRemaining(rem){
@@ -1175,10 +1212,11 @@ function computeAcctBalance(monthKey, acctId){
   const adjNet=adjNetTotal(monthKey,acctId);
 
   if(acctId==='Bills/Pay'){
-    const totalPaycheck=periods.reduce((s,p)=>s+(pay[p.id]||0),0);
+    // Only count paychecks & bills from RECEIVED periods
+    const totalPaycheck=periods.filter(p=>isPayReceived(monthKey,p.id)).reduce((s,p)=>s+(pay[p.id]||0),0);
     const allAssigned=bills.filter(b=>b.account&&b.account!=='');
-    const allExpenses=allAssigned.filter(b=>b.type!=='income');
-    const allIncome=allAssigned.filter(b=>b.type==='income');
+    const allExpenses=allAssigned.filter(b=>b.type!=='income'&&isPayReceived(monthKey,b.period));
+    const allIncome=allAssigned.filter(b=>b.type==='income'&&isPayReceived(monthKey,b.period));
     const allocated=allExpenses.reduce((s,b)=>s+b.amount,0);
     const credited=allIncome.reduce((s,b)=>s+b.amount,0);
     const deducted=allExpenses.filter(b=>b.status==='paid'||b.status==='autopay'||b.status==='pending');
@@ -1191,7 +1229,8 @@ function computeAcctBalance(monthKey, acctId){
     return{funded,allocated,manual:0,spent,balance,paid,unpaid,assigned,isBillsPay:true,totalPaycheck,credited,adjNet,allIncome};
   }
 
-  const assigned=bills.filter(b=>b.account===acctId&&b.type!=='income');
+  // For non-Bills/Pay accounts, only count bills from RECEIVED periods
+  const assigned=bills.filter(b=>b.account===acctId&&b.type!=='income'&&isPayReceived(monthKey,b.period));
   const paid=assigned.filter(b=>b.status==='paid'||b.status==='autopay'||b.status==='pending');
   const unpaid=assigned.filter(b=>b.status==='unpaid'||!b.status);
   const allocated=assigned.reduce((s,b)=>s+b.amount,0);
